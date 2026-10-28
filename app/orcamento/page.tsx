@@ -27,8 +27,8 @@ export default function BudgetPage() {
           <p className="eyebrow">Próximos passos</p>
           <h2>Um pedido simples para começar.</h2>
           <p>
-            Informe um contato e descreva sua necessidade. As informações serão usadas somente
-            para responder a esta solicitação e não ficam armazenadas pelo site.
+            Informe um contato e descreva sua necessidade. Os dados são encaminhados por e-mail
+            para responder à solicitação; o site não os grava em banco próprio.
           </p>
           <ul className="check-list">
             <li>Explique o contexto com suas palavras</li>

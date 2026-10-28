@@ -21,6 +21,7 @@ export function SiteFooter() {
           <Link href="/empresas">Soluções para empresas</Link>
           <Link href="/cursos">Cursos e materiais</Link>
           <Link href="/portfolio">Portfólio</Link>
+          <Link href="/privacidade">Aviso de privacidade</Link>
         </div>
         <div className="footer-links">
           <span className="eyebrow">Vamos conversar?</span>
