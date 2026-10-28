@@ -1,8 +1,12 @@
+import { checkRateLimit } from "@vercel/firewall";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
 const MAX_BODY_BYTES = 10_000;
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const RATE_LIMIT_MAX_REQUESTS = 10;
+const MAX_TRACKED_CLIENTS = 5_000;
 const allowedServices = new Set([
   "suporte",
   "computadores",
@@ -17,6 +21,8 @@ const serviceLabels: Record<string, string> = {
   empresas: "Soluções para empresas",
   outro: "Outro assunto",
 };
+const requestCounts = new Map<string, { count: number; resetAt: number }>();
+let lastRateLimitCleanup = 0;
 
 type BudgetRequest = {
   name: string;
@@ -24,6 +30,43 @@ type BudgetRequest = {
   service: string;
   description: string;
 };
+
+function isRateLimitedLocally(request: Request): boolean {
+  const now = Date.now();
+
+  if (now - lastRateLimitCleanup >= 60_000) {
+    for (const [client, entry] of requestCounts) {
+      if (entry.resetAt <= now) requestCounts.delete(client);
+    }
+    lastRateLimitCleanup = now;
+  }
+
+  const forwardedIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const clientIp = forwardedIp || request.headers.get("x-real-ip")?.trim() || "unknown";
+  const entry = requestCounts.get(clientIp);
+
+  if (entry && entry.resetAt > now) {
+    if (entry.count >= RATE_LIMIT_MAX_REQUESTS) return true;
+    entry.count += 1;
+    return false;
+  }
+
+  if (requestCounts.size >= MAX_TRACKED_CLIENTS) return true;
+  requestCounts.set(clientIp, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+  return false;
+}
+
+async function isRateLimited(request: Request): Promise<boolean> {
+  if (process.env.VERCEL) {
+    const result = await checkRateLimit("budget-form", {
+      request,
+      timeout: 1_000,
+    });
+    return result.rateLimited;
+  }
+
+  return isRateLimitedLocally(request);
+}
 
 async function readRequestBody(request: Request): Promise<unknown> {
   const reader = request.body?.getReader();
@@ -92,7 +135,57 @@ function validateRequest(value: unknown): BudgetRequest | null {
   return cleaned;
 }
 
+function hasAllowedOrigin(request: Request, origin: string): boolean {
+  try {
+    const requestUrl = new URL(request.url);
+    const expectedHost =
+      request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ||
+      request.headers.get("host") ||
+      requestUrl.host;
+    const expectedProtocol =
+      request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ||
+      requestUrl.protocol.slice(0, -1);
+    const originUrl = new URL(origin);
+
+    return (
+      origin === originUrl.origin &&
+      originUrl.host === expectedHost &&
+      originUrl.protocol === `${expectedProtocol}:`
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(request: Request) {
+  const origin = request.headers.get("origin");
+  if (origin && !hasAllowedOrigin(request, origin)) {
+    return NextResponse.json({ message: "Origem da solicitação não permitida." }, { status: 403 });
+  }
+
+  const contentType = request.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
+  if (contentType !== "application/json") {
+    return NextResponse.json({ message: "Tipo de conteúdo não permitido." }, { status: 415 });
+  }
+
+  let rateLimited: boolean;
+  try {
+    rateLimited = await isRateLimited(request);
+  } catch (error) {
+    console.error("Rate limit check failed for the quote endpoint.", error);
+    return NextResponse.json(
+      { message: "Não foi possível validar a solicitação com segurança. Tente novamente mais tarde." },
+      { status: 503 },
+    );
+  }
+
+  if (rateLimited) {
+    return NextResponse.json(
+      { message: "Muitas solicitações. Aguarde antes de tentar novamente." },
+      { status: 429 },
+    );
+  }
+
   let body: unknown;
 
   try {
