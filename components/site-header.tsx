@@ -5,7 +5,7 @@ export function SiteHeader() {
   return (
     <header className="site-header">
       <div className="container header-content">
-        <Link className="brand" href="/" aria-label="GuiTech Digital, início">
+        <Link className="brand" href="/" aria-label="G. GuiTech Digital, início">
           <span className="brand-mark" aria-hidden="true">
             G<span>.</span>
           </span>
