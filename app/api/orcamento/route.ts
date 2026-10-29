@@ -1,12 +1,8 @@
-import { checkRateLimit } from "@vercel/firewall";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
 const MAX_BODY_BYTES = 10_000;
-const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
-const RATE_LIMIT_MAX_REQUESTS = 10;
-const MAX_TRACKED_CLIENTS = 5_000;
 const allowedServices = new Set([
   "suporte",
   "computadores",
@@ -21,8 +17,6 @@ const serviceLabels: Record<string, string> = {
   empresas: "Soluções para empresas",
   outro: "Outro assunto",
 };
-const requestCounts = new Map<string, { count: number; resetAt: number }>();
-let lastRateLimitCleanup = 0;
 
 type BudgetRequest = {
   name: string;
@@ -30,43 +24,6 @@ type BudgetRequest = {
   service: string;
   description: string;
 };
-
-function isRateLimitedLocally(request: Request): boolean {
-  const now = Date.now();
-
-  if (now - lastRateLimitCleanup >= 60_000) {
-    for (const [client, entry] of requestCounts) {
-      if (entry.resetAt <= now) requestCounts.delete(client);
-    }
-    lastRateLimitCleanup = now;
-  }
-
-  const forwardedIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const clientIp = forwardedIp || request.headers.get("x-real-ip")?.trim() || "unknown";
-  const entry = requestCounts.get(clientIp);
-
-  if (entry && entry.resetAt > now) {
-    if (entry.count >= RATE_LIMIT_MAX_REQUESTS) return true;
-    entry.count += 1;
-    return false;
-  }
-
-  if (requestCounts.size >= MAX_TRACKED_CLIENTS) return true;
-  requestCounts.set(clientIp, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-  return false;
-}
-
-async function isRateLimited(request: Request): Promise<boolean> {
-  if (process.env.VERCEL) {
-    const result = await checkRateLimit("budget-form", {
-      request,
-      timeout: 1_000,
-    });
-    return result.rateLimited;
-  }
-
-  return isRateLimitedLocally(request);
-}
 
 async function readRequestBody(request: Request): Promise<unknown> {
   const reader = request.body?.getReader();
@@ -135,55 +92,41 @@ function validateRequest(value: unknown): BudgetRequest | null {
   return cleaned;
 }
 
-function hasAllowedOrigin(request: Request, origin: string): boolean {
-  try {
-    const requestUrl = new URL(request.url);
-    const expectedHost =
-      request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ||
-      request.headers.get("host") ||
-      requestUrl.host;
-    const expectedProtocol =
-      request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ||
-      requestUrl.protocol.slice(0, -1);
-    const originUrl = new URL(origin);
+function getCanonicalOrigin(): string | null {
+  const configuredOrigin = process.env.SITE_ORIGIN?.trim();
+  if (!configuredOrigin) return null;
 
-    return (
-      origin === originUrl.origin &&
-      originUrl.host === expectedHost &&
-      originUrl.protocol === `${expectedProtocol}:`
-    );
+  try {
+    const url = new URL(configuredOrigin);
+
+    return url.origin === configuredOrigin && (url.protocol === "https:" || url.protocol === "http:")
+      ? url.origin
+      : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
 export async function POST(request: Request) {
+  const canonicalOrigin = getCanonicalOrigin();
+  if (!canonicalOrigin) {
+    console.error("Quote form configuration check failed.", {
+      check: process.env.SITE_ORIGIN?.trim() ? "site_origin_invalid" : "site_origin_missing",
+    });
+    return NextResponse.json(
+      { message: "O formulário ainda não está configurado para receber solicitações." },
+      { status: 503 },
+    );
+  }
+
   const origin = request.headers.get("origin");
-  if (origin && !hasAllowedOrigin(request, origin)) {
+  if (!origin || origin !== canonicalOrigin) {
     return NextResponse.json({ message: "Origem da solicitação não permitida." }, { status: 403 });
   }
 
   const contentType = request.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
   if (contentType !== "application/json") {
     return NextResponse.json({ message: "Tipo de conteúdo não permitido." }, { status: 415 });
-  }
-
-  let rateLimited: boolean;
-  try {
-    rateLimited = await isRateLimited(request);
-  } catch (error) {
-    console.error("Rate limit check failed for the quote endpoint.", error);
-    return NextResponse.json(
-      { message: "Não foi possível validar a solicitação com segurança. Tente novamente mais tarde." },
-      { status: 503 },
-    );
-  }
-
-  if (rateLimited) {
-    return NextResponse.json(
-      { message: "Muitas solicitações. Aguarde antes de tentar novamente." },
-      { status: 429 },
-    );
   }
 
   let body: unknown;
@@ -198,6 +141,14 @@ export async function POST(request: Request) {
     );
   }
 
+  if (
+    isRecord(body) &&
+    body.website !== undefined &&
+    (typeof body.website !== "string" || body.website.trim() !== "")
+  ) {
+    return NextResponse.json({ message: "Dados inválidos." }, { status: 400 });
+  }
+
   const budget = validateRequest(body);
   if (!budget) {
     return NextResponse.json(
@@ -209,8 +160,19 @@ export async function POST(request: Request) {
   const apiKey = process.env.RESEND_API_KEY;
   const destination = process.env.ORCAMENTO_EMAIL_DESTINO;
   const sender = process.env.ORCAMENTO_EMAIL_ORIGEM;
+  const missingEmailConfiguration = [
+    ["RESEND_API_KEY", apiKey],
+    ["ORCAMENTO_EMAIL_DESTINO", destination],
+    ["ORCAMENTO_EMAIL_ORIGEM", sender],
+  ]
+    .filter(([, value]) => !value?.trim())
+    .map(([name]) => name);
 
-  if (!apiKey || !destination || !sender) {
+  if (missingEmailConfiguration.length > 0) {
+    console.error("Quote form configuration check failed.", {
+      check: "resend_environment",
+      missingVariables: missingEmailConfiguration,
+    });
     return NextResponse.json(
       {
         message:
@@ -251,12 +213,20 @@ export async function POST(request: Request) {
     });
 
     if (!response.ok) {
+      console.error("Quote form delivery failed.", {
+        check: "resend_api",
+        status: response.status,
+      });
       return NextResponse.json(
         { message: "Não foi possível enviar sua solicitação agora. Tente novamente mais tarde." },
         { status: 502 },
       );
     }
-  } catch {
+  } catch (error) {
+    console.error("Quote form delivery request failed.", {
+      check: "resend_request",
+      reason: error instanceof Error && error.name === "TimeoutError" ? "timeout" : "request_error",
+    });
     return NextResponse.json(
       { message: "Não foi possível enviar sua solicitação agora. Tente novamente mais tarde." },
       { status: 502 },

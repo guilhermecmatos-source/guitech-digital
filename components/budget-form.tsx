@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Link from "next/link";
 
 const serviceOptions = [
   { value: "suporte", label: "Suporte e manutenção" },
@@ -15,6 +16,7 @@ type FormState = {
   contact: string;
   service: string;
   description: string;
+  website: string;
 };
 
 const emptyForm: FormState = {
@@ -22,6 +24,7 @@ const emptyForm: FormState = {
   contact: "",
   service: "",
   description: "",
+  website: "",
 };
 
 export function BudgetForm() {
@@ -126,9 +129,20 @@ export function BudgetForm() {
           value={form.description}
         />
       </div>
+      <div className="honeypot-field" aria-hidden="true">
+        <label htmlFor="website">Deixe este campo em branco</label>
+        <input
+          autoComplete="off"
+          id="website"
+          name="website"
+          onChange={(event) => setForm({ ...form, website: event.target.value })}
+          tabIndex={-1}
+          value={form.website}
+        />
+      </div>
       <p className="form-privacy">
-        Usaremos essas informações apenas para responder à sua solicitação. Elas não são
-        armazenadas pelo site.
+        Os dados serão encaminhados por e-mail para responder à solicitação; o site não os
+        grava em banco próprio. Consulte o <Link href="/privacidade">aviso de privacidade</Link>.
       </p>
       {message ? (
         <p className={`form-message ${messageType}`} role="status" aria-live="polite">
