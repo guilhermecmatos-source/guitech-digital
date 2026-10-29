@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getCanonicalSiteOrigin } from "@/lib/site-origin";
 
 export const runtime = "nodejs";
 
@@ -92,26 +93,15 @@ function validateRequest(value: unknown): BudgetRequest | null {
   return cleaned;
 }
 
-function getCanonicalOrigin(): string | null {
-  const configuredOrigin = process.env.SITE_ORIGIN?.trim();
-  if (!configuredOrigin) return null;
-
-  try {
-    const url = new URL(configuredOrigin);
-
-    return url.origin === configuredOrigin && (url.protocol === "https:" || url.protocol === "http:")
-      ? url.origin
-      : null;
-  } catch {
-    return null;
-  }
-}
-
 export async function POST(request: Request) {
-  const canonicalOrigin = getCanonicalOrigin();
+  const canonicalOrigin = getCanonicalSiteOrigin();
   if (!canonicalOrigin) {
     console.error("Quote form configuration check failed.", {
-      check: process.env.SITE_ORIGIN?.trim() ? "site_origin_invalid" : "site_origin_missing",
+      check: process.env.SITE_ORIGIN?.trim()
+        ? "site_origin_invalid"
+        : process.env.URL?.trim()
+          ? "netlify_url_invalid"
+          : "origin_configuration_missing",
     });
     return NextResponse.json(
       { message: "O formulário ainda não está configurado para receber solicitações." },
@@ -157,9 +147,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const apiKey = process.env.RESEND_API_KEY;
-  const destination = process.env.ORCAMENTO_EMAIL_DESTINO;
-  const sender = process.env.ORCAMENTO_EMAIL_ORIGEM;
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+  const destination = process.env.ORCAMENTO_EMAIL_DESTINO?.trim();
+  const sender = process.env.ORCAMENTO_EMAIL_ORIGEM?.trim();
   const missingEmailConfiguration = [
     ["RESEND_API_KEY", apiKey],
     ["ORCAMENTO_EMAIL_DESTINO", destination],

@@ -5,6 +5,9 @@ export const metadata: Metadata = {
   title: "Solicitar orçamento",
   description:
     "Conte à GuiTech Digital sobre sua necessidade de informática e solicite uma avaliação.",
+  alternates: {
+    canonical: "/orcamento",
+  },
 };
 
 export default function BudgetPage() {

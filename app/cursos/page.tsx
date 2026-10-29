@@ -6,6 +6,9 @@ export const metadata: Metadata = {
   title: "Cursos e materiais",
   description:
     "Área demonstrativa preparada para futuros cursos e materiais digitais da GuiTech Digital.",
+  alternates: {
+    canonical: "/cursos",
+  },
 };
 
 const examples = [

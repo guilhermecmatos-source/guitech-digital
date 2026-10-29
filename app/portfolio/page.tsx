@@ -5,6 +5,9 @@ export const metadata: Metadata = {
   title: "Portfólio",
   description:
     "Espaço preparado para apresentar projetos reais da GuiTech Digital, com autorização.",
+  alternates: {
+    canonical: "/portfolio",
+  },
 };
 
 export default function PortfolioPage() {
