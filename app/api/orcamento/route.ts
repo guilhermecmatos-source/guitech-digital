@@ -110,6 +110,9 @@ function getCanonicalOrigin(): string | null {
 export async function POST(request: Request) {
   const canonicalOrigin = getCanonicalOrigin();
   if (!canonicalOrigin) {
+    console.error("Quote form configuration check failed.", {
+      check: process.env.SITE_ORIGIN?.trim() ? "site_origin_invalid" : "site_origin_missing",
+    });
     return NextResponse.json(
       { message: "O formulário ainda não está configurado para receber solicitações." },
       { status: 503 },
@@ -157,8 +160,19 @@ export async function POST(request: Request) {
   const apiKey = process.env.RESEND_API_KEY;
   const destination = process.env.ORCAMENTO_EMAIL_DESTINO;
   const sender = process.env.ORCAMENTO_EMAIL_ORIGEM;
+  const missingEmailConfiguration = [
+    ["RESEND_API_KEY", apiKey],
+    ["ORCAMENTO_EMAIL_DESTINO", destination],
+    ["ORCAMENTO_EMAIL_ORIGEM", sender],
+  ]
+    .filter(([, value]) => !value?.trim())
+    .map(([name]) => name);
 
-  if (!apiKey || !destination || !sender) {
+  if (missingEmailConfiguration.length > 0) {
+    console.error("Quote form configuration check failed.", {
+      check: "resend_environment",
+      missingVariables: missingEmailConfiguration,
+    });
     return NextResponse.json(
       {
         message:
@@ -199,12 +213,20 @@ export async function POST(request: Request) {
     });
 
     if (!response.ok) {
+      console.error("Quote form delivery failed.", {
+        check: "resend_api",
+        status: response.status,
+      });
       return NextResponse.json(
         { message: "Não foi possível enviar sua solicitação agora. Tente novamente mais tarde." },
         { status: 502 },
       );
     }
-  } catch {
+  } catch (error) {
+    console.error("Quote form delivery request failed.", {
+      check: "resend_request",
+      reason: error instanceof Error && error.name === "TimeoutError" ? "timeout" : "request_error",
+    });
     return NextResponse.json(
       { message: "Não foi possível enviar sua solicitação agora. Tente novamente mais tarde." },
       { status: 502 },
