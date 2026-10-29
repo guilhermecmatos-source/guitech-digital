@@ -778,6 +778,10 @@ textarea:focus-visible {
   padding-bottom: 100px;
 }
 
+.budget-layout > * {
+  min-width: 0;
+}
+
 .budget-aside h2 {
   margin: 0;
   font-size: 29px;
@@ -825,6 +829,7 @@ textarea:focus-visible {
 .field select,
 .field textarea {
   width: 100%;
+  min-width: 0;
   min-height: 49px;
   padding: 12px 13px;
   border: 1px solid rgba(148, 173, 207, 0.2);

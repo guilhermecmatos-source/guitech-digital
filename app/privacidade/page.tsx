@@ -3,6 +3,9 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Aviso de privacidade",
   description: "Informações sobre o tratamento dos dados enviados à GuiTech Digital.",
+  alternates: {
+    canonical: "/privacidade",
+  },
 };
 
 const pendingInformation = [

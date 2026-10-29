@@ -6,6 +6,9 @@ export const metadata: Metadata = {
   title: "Soluções para empresas",
   description:
     "Conheça formatos possíveis de suporte técnico recorrente e soluções de informática para empresas.",
+  alternates: {
+    canonical: "/empresas",
+  },
 };
 
 const supportModels = [

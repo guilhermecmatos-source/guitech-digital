@@ -6,6 +6,9 @@ export const metadata: Metadata = {
   title: "Serviços de informática",
   description:
     "Conheça os serviços de suporte técnico, manutenção, computadores, redes e soluções digitais da GuiTech Digital.",
+  alternates: {
+    canonical: "/servicos",
+  },
 };
 
 const services = [
